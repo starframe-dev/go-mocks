@@ -25,53 +25,53 @@ func NewMockHTTPClient() *MockHTTPClient {
 // Do implements HTTPClient.Do.
 func (m *MockHTTPClient) Do(req *http.Request) (*http.Response, error) {
 	m.mu.Lock()
-	defer m.mu.Unlock()
-
 	m.recordRequest(req)
+	fn := m.DoFunc
+	m.mu.Unlock()
 
-	if m.DoFunc != nil {
-		return m.DoFunc(req)
+	if fn != nil {
+		return fn(req)
 	}
-	return &http.Response{StatusCode: 200, Body: io.NopCloser(io.NopCloser(nil))}, nil
+	return defaultResponse(), nil
 }
 
 // Get implements HTTPClient.Get.
 func (m *MockHTTPClient) Get(url string) (*http.Response, error) {
 	m.mu.Lock()
-	defer m.mu.Unlock()
-
 	m.history = append(m.history, RecordedRequest{
-		Method: "GET",
+		Method: http.MethodGet,
 		URL:    url,
 	})
+	fn := m.GetFunc
+	m.mu.Unlock()
 
-	if m.GetFunc != nil {
-		return m.GetFunc(url)
+	if fn != nil {
+		return fn(url)
 	}
-	return &http.Response{StatusCode: 200, Body: io.NopCloser(nil)}, nil
+	return defaultResponse(), nil
 }
 
 // Post implements HTTPClient.Post.
 func (m *MockHTTPClient) Post(url string, contentType string, body io.Reader) (*http.Response, error) {
-	m.mu.Lock()
-	defer m.mu.Unlock()
-
 	var bodyBytes []byte
 	if body != nil {
 		bodyBytes, _ = io.ReadAll(body)
 	}
 
+	m.mu.Lock()
 	m.history = append(m.history, RecordedRequest{
-		Method:  "POST",
+		Method:  http.MethodPost,
 		URL:     url,
 		Body:    bodyBytes,
 		Headers: http.Header{"Content-Type": []string{contentType}},
 	})
+	fn := m.PostFunc
+	m.mu.Unlock()
 
-	if m.PostFunc != nil {
-		return m.PostFunc(url, contentType, io.NopCloser(bytes.NewReader(bodyBytes)))
+	if fn != nil {
+		return fn(url, contentType, bytes.NewReader(bodyBytes))
 	}
-	return &http.Response{StatusCode: 200, Body: io.NopCloser(nil)}, nil
+	return defaultResponse(), nil
 }
 
 // History returns a copy of all recorded requests.
@@ -90,6 +90,7 @@ func (m *MockHTTPClient) Reset() {
 	m.history = nil
 }
 
+// recordRequest appends req to the history. The caller must hold m.mu.
 func (m *MockHTTPClient) recordRequest(req *http.Request) {
 	var bodyBytes []byte
 	if req.Body != nil {
@@ -103,4 +104,9 @@ func (m *MockHTTPClient) recordRequest(req *http.Request) {
 		Headers: req.Header,
 		Body:    bodyBytes,
 	})
+}
+
+// defaultResponse returns a 200 response with a safe empty body.
+func defaultResponse() *http.Response {
+	return &http.Response{StatusCode: http.StatusOK, Body: http.NoBody}
 }

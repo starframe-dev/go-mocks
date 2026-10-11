@@ -12,11 +12,13 @@ import (
 )
 
 var (
-	ErrNotFound = errors.New("fs: file or directory not found")
-	ErrNotDir   = errors.New("fs: not a directory")
-	ErrIsDir    = errors.New("fs: is a directory")
-	ErrNotEmpty = errors.New("fs: directory not empty")
-	ErrInvalid  = errors.New("fs: invalid argument")
+	ErrNotFound  = errors.New("fs: file or directory not found")
+	ErrNotDir    = errors.New("fs: not a directory")
+	ErrIsDir     = errors.New("fs: is a directory")
+	ErrNotEmpty  = errors.New("fs: directory not empty")
+	ErrInvalid   = errors.New("fs: invalid argument")
+	ErrReadOnly  = errors.New("fs: file is read-only")
+	ErrWriteOnly = errors.New("fs: file is write-only")
 )
 
 // FS is a filesystem abstraction.
@@ -40,16 +42,18 @@ var _ FS = (*MemMapFs)(nil)
 // OSFS is real filesystem (used in production).
 type OSFS struct{}
 
-func (OSFS) ReadFile(path string) ([]byte, error)                     { return os.ReadFile(path) }
-func (OSFS) WriteFile(path string, data []byte, perm os.FileMode) error { return os.WriteFile(path, data, perm) }
-func (OSFS) MkdirAll(path string, perm os.FileMode) error            { return os.MkdirAll(path, perm) }
-func (OSFS) Stat(path string) (os.FileInfo, error)                   { return os.Stat(path) }
-func (OSFS) Remove(path string) error                               { return os.Remove(path) }
-func (OSFS) RemoveAll(path string) error                            { return os.RemoveAll(path) }
-func (OSFS) Open(path string) (io.Reader, error)                    { return os.Open(path) }
-func (OSFS) Exists(path string) bool                                { _, err := os.Stat(path); return err == nil }
-func (OSFS) IsDir(path string) bool                                 { info, err := os.Stat(path); return err == nil && info.IsDir() }
-func (OSFS) Walk(root string, fn filepath.WalkFunc) error          { return filepath.Walk(root, fn) }
+func (OSFS) ReadFile(path string) ([]byte, error) { return os.ReadFile(path) }
+func (OSFS) WriteFile(path string, data []byte, perm os.FileMode) error {
+	return os.WriteFile(path, data, perm)
+}
+func (OSFS) MkdirAll(path string, perm os.FileMode) error { return os.MkdirAll(path, perm) }
+func (OSFS) Stat(path string) (os.FileInfo, error)        { return os.Stat(path) }
+func (OSFS) Remove(path string) error                     { return os.Remove(path) }
+func (OSFS) RemoveAll(path string) error                  { return os.RemoveAll(path) }
+func (OSFS) Open(path string) (io.Reader, error)          { return os.Open(path) }
+func (OSFS) Exists(path string) bool                      { _, err := os.Stat(path); return err == nil }
+func (OSFS) IsDir(path string) bool                       { info, err := os.Stat(path); return err == nil && info.IsDir() }
+func (OSFS) Walk(root string, fn filepath.WalkFunc) error { return filepath.Walk(root, fn) }
 
 type NodeType int
 
@@ -234,7 +238,13 @@ func (f *MemMapFs) OpenFile(path string, flag int, perm os.FileMode) (*File, err
 		node.Content = []byte{}
 		node.ModTime = time.Now()
 	}
-	return &File{node: node, path: path, fs: f, readOnly: flag&(os.O_WRONLY|os.O_RDWR) == 0}, nil
+	return &File{
+		node:      node,
+		path:      path,
+		fs:        f,
+		readOnly:  flag&(os.O_WRONLY|os.O_RDWR) == 0,
+		writeOnly: flag&os.O_WRONLY != 0,
+	}, nil
 }
 
 func (f *MemMapFs) Stat(path string) (os.FileInfo, error) {
@@ -441,20 +451,21 @@ func (f *MemMapFs) Walk(path string, fn filepath.WalkFunc) error {
 }
 
 type File struct {
-	node     *Node
-	path     string
-	offset   int64
-	fs       *MemMapFs
-	readOnly bool
-	closed   bool
+	node      *Node
+	path      string
+	offset    int64
+	fs        *MemMapFs
+	readOnly  bool
+	writeOnly bool
+	closed    bool
 }
 
 func (f *File) Read(p []byte) (int, error) {
 	if f.closed {
 		return 0, errors.New("fs: file closed")
 	}
-	if f.readOnly {
-		return 0, errors.New("fs: read only")
+	if f.writeOnly {
+		return 0, ErrWriteOnly
 	}
 	f.fs.mu.RLock()
 	defer f.fs.mu.RUnlock()
@@ -470,18 +481,20 @@ func (f *File) Write(p []byte) (int, error) {
 	if f.closed {
 		return 0, errors.New("fs: file closed")
 	}
+	if f.readOnly {
+		return 0, ErrReadOnly
+	}
 	f.fs.mu.Lock()
 	defer f.fs.mu.Unlock()
-	content := make([]byte, len(f.node.Content))
+
+	// Overwrite in place at the current offset, zero-filling any gap, like a real file.
+	end := int(f.offset) + len(p)
+	content := make([]byte, max(end, len(f.node.Content)))
 	copy(content, f.node.Content)
-	if f.offset < int64(len(content)) {
-		content = append(content[:f.offset], p...)
-	} else {
-		content = append(content, p...)
-	}
+	copy(content[f.offset:], p)
 	f.node.Content = content
 	f.node.ModTime = time.Now()
-	f.offset = int64(len(content))
+	f.offset = int64(end)
 	return len(p), nil
 }
 
@@ -491,14 +504,20 @@ func (f *File) Seek(offset int64, whence int) (int64, error) {
 	}
 	f.fs.mu.Lock()
 	defer f.fs.mu.Unlock()
+	var base int64
 	switch whence {
 	case io.SeekStart:
-		f.offset = offset
 	case io.SeekCurrent:
-		f.offset += offset
+		base = f.offset
 	case io.SeekEnd:
-		f.offset = int64(len(f.node.Content)) + offset
+		base = int64(len(f.node.Content))
+	default:
+		return 0, ErrInvalid
 	}
+	if base+offset < 0 {
+		return 0, ErrInvalid
+	}
+	f.offset = base + offset
 	return f.offset, nil
 }
 

@@ -1,6 +1,6 @@
 package contracts
 
-import "github.com/human-horizon/go-mocks/tui"
+import "github.com/starframe-dev/go-mocks/tui"
 
 // TerminalContract defines the expected interface for terminal implementations.
 type TerminalContract interface {

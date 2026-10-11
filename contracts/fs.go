@@ -4,6 +4,8 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+
+	"github.com/starframe-dev/go-mocks/fs"
 )
 
 // FSContract defines the expected interface for filesystem implementations.
@@ -38,3 +40,9 @@ type FSContract interface {
 	// Walk walks the file tree rooted at root.
 	Walk(root string, fn filepath.WalkFunc) error
 }
+
+// AssertFSContract compiles at compile time that MemMapFs and OSFS implement FSContract.
+var (
+	_ FSContract = (*fs.MemMapFs)(nil)
+	_ FSContract = fs.OSFS{}
+)

@@ -4,7 +4,7 @@ import (
 	"os"
 	"testing"
 
-	"github.com/human-horizon/go-mocks/fs"
+	"github.com/starframe-dev/go-mocks/fs"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )

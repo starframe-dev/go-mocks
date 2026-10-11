@@ -79,19 +79,25 @@ func (c *InMemoryHTTPClient) Do(req *http.Request) (*http.Response, error) {
 
 // Get implements HTTPClient.Get.
 func (c *InMemoryHTTPClient) Get(urlStr string) (*http.Response, error) {
-	u, _ := url.Parse(urlStr)
-	return c.Do(&http.Request{Method: "GET", URL: u})
+	u, err := url.Parse(urlStr)
+	if err != nil {
+		return nil, fmt.Errorf("parse url %q: %w", urlStr, err)
+	}
+	return c.Do(&http.Request{Method: http.MethodGet, URL: u})
 }
 
 // Post implements HTTPClient.Post.
 func (c *InMemoryHTTPClient) Post(urlStr string, contentType string, body io.Reader) (*http.Response, error) {
-	u, _ := url.Parse(urlStr)
+	u, err := url.Parse(urlStr)
+	if err != nil {
+		return nil, fmt.Errorf("parse url %q: %w", urlStr, err)
+	}
 	var bodyBytes []byte
 	if body != nil {
 		bodyBytes, _ = io.ReadAll(body)
 	}
 	return c.Do(&http.Request{
-		Method: "POST",
+		Method: http.MethodPost,
 		URL:    u,
 		Header: http.Header{"Content-Type": []string{contentType}},
 		Body:   io.NopCloser(bytes.NewReader(bodyBytes)),

@@ -63,10 +63,10 @@ func (t *RealTestTerminal) Cleanup() error {
 // InMemoryTestTerminal is a simpler in-memory implementation for testing.
 // Useful when you don't need a real process but want to test command flow.
 type InMemoryTestTerminal struct {
-	mu       sync.RWMutex
-	view     View
-	history  []string
-	onSend   func(input string) View
+	mu        sync.RWMutex
+	view      View
+	history   []string
+	onSend    func(input string) View
 	onExecute func(cmd string) View
 }
 
@@ -131,12 +131,12 @@ func (t *InMemoryTestTerminal) History() []string {
 
 // MockTestTerminal implements TestTerminal for testing purposes.
 type MockTestTerminal struct {
-	mu       sync.RWMutex
-	view     View
-	history  []string
+	mu          sync.RWMutex
+	view        View
+	history     []string
 	ExecuteFunc func(cmd string) View
-	ReadFunc   func() View
-	SendFunc   func(input string) error
+	ReadFunc    func() View
+	SendFunc    func(input string) error
 }
 
 var _ TestTerminal = (*MockTestTerminal)(nil)

@@ -4,7 +4,7 @@ import (
 	"io"
 	"net/http"
 
-	"github.com/human-horizon/go-mocks/net"
+	"github.com/starframe-dev/go-mocks/net"
 )
 
 // NetContract defines the expected interface for HTTP client implementations.

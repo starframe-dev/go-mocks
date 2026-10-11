@@ -230,7 +230,7 @@ func TestInMemoryHTTPClient_ConcurrentAccess(t *testing.T) {
 
 // UserService demonstrates how to use HTTPClient mock in real code.
 type UserService struct {
-	client HTTPClient
+	client  HTTPClient
 	baseURL string
 }
 
