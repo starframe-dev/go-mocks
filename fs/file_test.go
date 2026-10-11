@@ -380,6 +380,29 @@ func TestFS_SeedNestedAndRelative(t *testing.T) {
 	assert.True(t, f.IsFile("/top.txt"))
 }
 
+func TestFS_MkdirExistingKeepsContent(t *testing.T) {
+	f := fs.New()
+	f.Seed(map[string]string{"/dir/a.txt": "keep"})
+
+	err := f.Mkdir("/dir")
+
+	assert.ErrorIs(t, err, os.ErrExist)
+	assert.True(t, f.IsFile("/dir/a.txt"))
+}
+
+func TestFS_WalkVisitsInLexicalOrder(t *testing.T) {
+	f := fs.New()
+	f.Seed(map[string]string{"/c.txt": "", "/a/z.txt": "", "/a/b.txt": "", "/b.txt": ""})
+
+	var visited []string
+	require.NoError(t, f.Walk("/", func(path string, _ os.FileInfo, _ error) error {
+		visited = append(visited, path)
+		return nil
+	}))
+
+	assert.Equal(t, []string{"/", "/a", "/a/b.txt", "/a/z.txt", "/b.txt", "/c.txt"}, visited)
+}
+
 func TestFS_WalkErrors(t *testing.T) {
 	f := fs.New()
 	f.Seed(map[string]string{"/a.txt": "", "/b.txt": ""})

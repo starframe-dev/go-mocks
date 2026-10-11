@@ -172,6 +172,9 @@ func (f *MemMapFs) Mkdir(path string) error {
 	if parentNode.Type != NodeDir {
 		return ErrNotDir
 	}
+	if _, exists := parentNode.Children[name]; exists {
+		return os.ErrExist
+	}
 	parentNode.Children[name] = &Node{Type: NodeDir, Children: make(map[string]*Node), ModTime: time.Now()}
 	return nil
 }
@@ -435,8 +438,14 @@ func (f *MemMapFs) Walk(path string, fn filepath.WalkFunc) error {
 			return err
 		}
 		if node.Type == NodeDir && node.Children != nil {
-			for name, child := range node.Children {
-				if err := walkFn(filepath.Join(path, name), child); err != nil {
+			// Visit children in lexical order, like filepath.Walk.
+			names := make([]string, 0, len(node.Children))
+			for name := range node.Children {
+				names = append(names, name)
+			}
+			sort.Strings(names)
+			for _, name := range names {
+				if err := walkFn(filepath.Join(path, name), node.Children[name]); err != nil {
 					return err
 				}
 			}
